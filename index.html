@@ -28,6 +28,19 @@ body{font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-text-size
 .wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:calc(14px + env(safe-area-inset-top,0px)) calc(40px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px}
 header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
 h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-height:1.1}
+.modes{flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--chip);padding:4px;border-radius:12px}
+.modes button{all:unset;cursor:pointer;border-radius:9px;padding:9px 10px;display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0}
+.modes button b{font:700 1.1rem var(--f-display)}
+.modes button span{font-size:.76rem;color:var(--muted);line-height:1.25}
+.modes button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.modes button[aria-pressed="true"] b{color:var(--accent)}
+.modes button:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.floorband{color:#fff;padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.floorband .fl{font:700 2.6rem/1 var(--f-display);letter-spacing:.02em}
+.floorband .to{font:600 1.25rem/1.15 var(--f-display);overflow-wrap:anywhere}
+.floorband .lbl{font:600 .74rem var(--f-display);letter-spacing:.09em;text-transform:uppercase;opacity:.85}
+.again{padding:9px 16px;background:var(--chip);font-size:.88rem;font-weight:600}
+.resetbtn{margin:0 16px 12px;width:calc(100% - 32px)}
 .listmeta{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .label{font-family:var(--f-display);font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
 .btn{font:600 .95rem var(--f-body);border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;cursor:pointer;text-align:center}
@@ -125,6 +138,10 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
   <header>
     <h1>Find My Table</h1>
     <span class="listmeta" id="listMeta"></span>
+    <div class="modes" role="group" aria-label="Mode">
+      <button type="button" id="modeSort" aria-pressed="true"><b>Sorting</b><span>Where does this box go?</span></button>
+      <button type="button" id="modeCheck" aria-pressed="false"><b>Checking</b><span>Are all boxes of the table here?</span></button>
+    </div>
   </header>
 
   <section style="display:flex;flex-direction:column;gap:10px">
@@ -257,7 +274,19 @@ function pianoLabel(e){
 let list=BUILTIN; try{localStorage.removeItem("tt_list")}catch(e){}
 let IDX=buildIndex(list);
 let recent=store.get("tt_recent")||[];
-let scanned=new Set(store.get("tt_scanned")||[]);
+let mode=store.get("tt_mode")==="check"?"check":"sort";
+const ticks={sort:new Set(store.get("tt_sorted")||[]),check:new Set(store.get("tt_checked")||[])};
+try{localStorage.removeItem("tt_scanned")}catch(e){}
+const saveTicks=()=>{store.set("tt_sorted",[...ticks.sort]);store.set("tt_checked",[...ticks.check]);};
+const WORD={sort:{done:"sorted",legend:"Already sorted"},check:{done:"checked",legend:"Found here"}};
+const FLOORCOL={"04":"#0f6e6a","05":"#b8430a","06":"#1d4ed8","07":"#7a22b8"};
+let lastShown=null;
+function setMode(m){
+  mode=m; store.set("tt_mode",m);
+  $("modeSort").setAttribute("aria-pressed",String(m==="sort"));
+  $("modeCheck").setAttribute("aria-pressed",String(m==="check"));
+  if(lastShown) show(lastShown.code,lastShown.format,"From the list");
+}
 
 function renderListInfo(){
   $("listMeta").textContent=IDX.byBox.size.toLocaleString("en-GB")+" boxes · "+IDX.byTav.size+" tables";
@@ -292,9 +321,9 @@ function partsList(arr,current){
     if(items[0].fea) li.append(el("span","feat",items[0].fea+(items[0].fan?" · "+items[0].fan:"")));
     const ch=el("div","chips");
     items.slice().sort((a,b)=>a.box.localeCompare(b.box,"en",{numeric:true})).forEach(x=>{
-      const isMe=current&&norm(x.box)===norm(current.box), ok=scanned.has(norm(x.box));
+      const isMe=current&&norm(x.box)===norm(current.box), ok=ticks[mode].has(norm(x.box));
       const b=el("button","chip"+(isMe?" me":ok?" ok":""),(ok&&!isMe?"✓ ":"")+x.box); b.type="button";
-      b.title=isMe?"This box":ok?"Already scanned":"Still to find";
+      b.title=isMe?"This box":ok?WORD[mode].legend:"Still to find";
       b.onclick=()=>show(x.box,null,"From the list");
       ch.append(b);
     });
@@ -311,10 +340,19 @@ function show(code,format,src){
 
   if(r.type==="box"){
     const e=r.e, t=splitTav(e.tav);
-    if(src!=="From the list"){ scanned.add(norm(e.box)); store.set("tt_scanned",[...scanned]); }
+    const set=ticks[mode], k=norm(e.box), before=set.has(k);
+    if(src!=="From the list"){ set.add(k); saveTicks(); }
+    lastShown={code:e.box,format};
+    const flc=(t.code.match(/^(\d+)-/)||[])[1]||"";
+    if(mode==="sort"){
+      const fb=el("div","floorband"); fb.style.background=FLOORCOL[flc]||"#333";
+      fb.append(el("span","lbl","Take it to"),el("span","fl",pianoLabel(e)||("Floor "+(+flc||"?"))),el("span","to",(t.dest||"—").replace(/\s+/g," ")));
+      card.append(fb);
+    }
+    if(before&&src!=="From the list") card.append(el("div","again",mode==="sort"?"You already scanned this box while sorting.":"This box was already checked here."));
     const top=el("div","tav");
     top.append(el("span","label","Table"),el("span","code",t.code||"—"));
-    if(t.dest) top.append(el("span","dest",t.dest));
+    if(t.dest&&mode==="check") top.append(el("span","dest",t.dest));
     card.append(top);
     const sib=IDX.byTav.get(e.tav)||[e];
     const notes=[...new Set(sib.flatMap(x=>x.notes||[]))];
@@ -325,16 +363,23 @@ function show(code,format,src){
     card.append(meta);
 
     // all pieces of this table for this office
-    const g=el("section","grp");
-    const done=sib.filter(x=>scanned.has(norm(x.box))).length;
+    const g=el(mode==="sort"?"details":"section","grp"+(mode==="sort"?" more":""));
+    const done=sib.filter(x=>set.has(norm(x.box))).length;
     const gh=el("div","grp-h"); const ttl=el("div","ttl");
-    ttl.append(el("b",null,sib.length===1?"Only piece of this table for this office":"All pieces of this table for this office"),el("span",null,sib.length+(sib.length===1?" box":" boxes")+" · "+done+" scanned"));
+    ttl.append(el("b",null,sib.length===1?"Only piece of this table for this office":"All pieces of this table for this office"),el("span",null,sib.length+(sib.length===1?" box":" boxes")+" · "+done+" "+WORD[mode].done));
     const pr=el("div","progress"); const bar=el("i"); bar.style.width=Math.round(done/sib.length*100)+"%"; pr.append(bar);
-    gh.append(ttl,pr); g.append(gh);
+    gh.append(ttl,pr);
+    if(mode==="sort"){ const sm=el("summary"); sm.append(el("b",null,"All pieces of this table"),el("span",null,done+" of "+sib.length+" sorted")); g.append(sm); }
+    else g.append(gh);
     g.append(partsList(sib,e));
     const lg=el("div","legend");
-    [["var(--found)","This box"],["var(--ok-bg)","Already scanned"],["var(--surface)","Still to find"]].forEach(([c,t])=>{const s=el("span");const i=el("i");i.style.background=c;s.append(i,t);lg.append(s);});
+    [["var(--found)","This box"],["var(--ok-bg)",WORD[mode].legend],["var(--surface)","Still to find"]].forEach(([c,t])=>{const s=el("span");const i=el("i");i.style.background=c;s.append(i,t);lg.append(s);});
     g.append(lg);
+    if(mode==="check"&&done>0){
+      const rb=el("button","btn resetbtn","Start the check of this table again"); rb.type="button";
+      rb.onclick=()=>{ sib.forEach(x=>ticks.check.delete(norm(x.box))); saveTicks(); show(e.box,format,"From the list"); };
+      g.append(rb);
+    }
     card.append(g);
 
     // this box
@@ -352,9 +397,9 @@ function show(code,format,src){
       d.append(s);
       others.forEach(ot=>{
         const arr=IDX.byTav.get(ot)||[]; const od=el("details","other"); const os=el("summary");
-        const dn=arr.filter(x=>scanned.has(norm(x.box))).length;
+        const dn=arr.filter(x=>ticks[mode].has(norm(x.box))).length;
         const mod=((arr[0]&&arr[0].mod)||"").replace(/\s*-\s*\d+\s*PZ\.?/i,"");
-        os.append(el("b",null,splitTav(ot).code),el("span",null,(mod?mod+" · ":"")+arr.length+" boxes · "+dn+" scanned"));
+        os.append(el("b",null,splitTav(ot).code),el("span",null,(mod?mod+" · ":"")+arr.length+" boxes · "+dn+" "+WORD[mode].done));
         od.append(os,partsList(arr,null)); d.append(od);
       });
       card.append(d);
@@ -493,6 +538,8 @@ async function tick(){
 
 $("startBtn").addEventListener("click",startCam);
 $("scanAgainBtn").addEventListener("click",scanAgain);
+$("modeSort").addEventListener("click",()=>setMode("sort"));
+$("modeCheck").addEventListener("click",()=>setMode("check"));
 $("stopBtn").addEventListener("click",stopCam);
 $("torchBtn").addEventListener("click",async()=>{
   if(!track) return; const on=$("torchBtn").getAttribute("aria-pressed")!=="true";
@@ -527,7 +574,7 @@ $("photoIn").addEventListener("change",async e=>{
 $("manualForm").addEventListener("submit",e=>{e.preventDefault();const v=$("manualIn").value.trim();if(v){if(stream)pause();show(v,null,"Typed");$("manualIn").blur();}});
 
 
-renderListInfo(); renderRecent();
+renderListInfo(); renderRecent(); setMode(mode);
 if(!window.isSecureContext){ photoFallback(); $("camMsg").textContent="This page is opened as a file, so the live camera may not start. If so, use “Take a photo”."; }
 })();
 </script>
