@@ -159,7 +159,7 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
   <header>
     <h1>Find My Table</h1>
     <span class="listmeta" id="listMeta"></span>
-    <nav class="modes" aria-label="Pages">
+    <nav class="modes" aria-label="Pages" id="pageNav" hidden>
       <a href="#sort" id="tabSort" aria-current="page"><b>Sorting</b><span>Where does this box go?</span></a>
       <a href="#check" id="tabCheck"><b>Table check</b><span>Scan the sign, then the boxes</span></a>
     </nav>
@@ -402,7 +402,7 @@ function show(code,format,src){
   } else if(r.type!=="table"){
     card.append(el("div","status no","This code is not in the list."));
   }
-  if(r.type==="table"){ card.append(el("div","status maybe","This is a table sign. Open Table check to check the boxes of this table.")); const a=el("a","btn primary next","Open Table check for this table"); a.href="#check-"+r.id; card.append(a); }
+  if(r.type==="table") card.append(el("div","status maybe","This is a table sign, not a box. Scan the barcode on a box label."));
   const rd=el("div","read"); rd.append(el("span",null,src||"Scanned code"),el("span","mono",code+(format?"  ("+format+")":"")));
   card.append(rd);
   box.append(card);
@@ -489,6 +489,7 @@ function route(){
   screen=h.startsWith("check")?"check":"sort";
   $("tabSort").toggleAttribute("aria-current",screen==="sort"); if(screen==="sort") $("tabSort").setAttribute("aria-current","page");
   $("tabCheck").toggleAttribute("aria-current",screen==="check"); if(screen==="check") $("tabCheck").setAttribute("aria-current","page");
+  $("pageNav").hidden=screen==="sort";
   $("sortPanel").hidden=screen!=="sort"; $("checkPanel").hidden=screen!=="check";
   $("manualIn").placeholder=screen==="check"?"or type a box number":"or type the box number";
   if(screen==="check"){
