@@ -170,12 +170,6 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
 
   <footer>
     <span class="hint" id="listName"></span>
-    <div class="row">
-      <label class="btn" for="xlsIn">Load another Excel list</label>
-      <button class="btn" type="button" id="resetList" hidden>Back to the built-in list</button>
-      <button class="btn" type="button" id="clearScanned">Clear ticked boxes</button>
-    </div>
-    <input id="xlsIn" type="file" accept=".xlsx,.xls,.xlsm,.ods,.csv" hidden>
   </footer>
 </div>
 
@@ -260,7 +254,7 @@ function pianoLabel(e){
   return "";
 }
 
-let list=store.get("tt_list")||BUILTIN;
+let list=BUILTIN; try{localStorage.removeItem("tt_list")}catch(e){}
 let IDX=buildIndex(list);
 let recent=store.get("tt_recent")||[];
 let scanned=new Set(store.get("tt_scanned")||[]);
@@ -268,7 +262,6 @@ let scanned=new Set(store.get("tt_scanned")||[]);
 function renderListInfo(){
   $("listMeta").textContent=IDX.byBox.size.toLocaleString("en-GB")+" boxes · "+IDX.byTav.size+" tables";
   $("listName").textContent="List: "+list.name;
-  $("resetList").hidden=(list===BUILTIN);
 }
 
 /* ============ SEARCH ============ */
@@ -533,25 +526,6 @@ $("photoIn").addEventListener("change",async e=>{
 /* --- typed --- */
 $("manualForm").addEventListener("submit",e=>{e.preventDefault();const v=$("manualIn").value.trim();if(v){if(stream)pause();show(v,null,"Typed");$("manualIn").blur();}});
 
-/* ============ ANOTHER LIST ============ */
-function loadScript(src){return new Promise((ok,ko)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=ko;document.head.append(s);});}
-$("xlsIn").addEventListener("change",async e=>{
-  const f=e.target.files[0]; e.target.value=""; if(!f) return;
-  const box=$("resultBox"); box.innerHTML="";
-  try{
-    if(!window.XLSX) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
-    const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
-    const sheets=wb.SheetNames.map(n=>{const ws=wb.Sheets[n]; if(!ws["!ref"]) return null; const rg=XLSX.utils.decode_range(ws["!ref"]);
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",blankrows:true}).map(r=>r.map(v=>typeof v==="number"&&Number.isInteger(v)?String(v):v));
-      for(let i=0;i<rg.s.r;i++) rows.unshift([]); return {name:n,r0:0,c0:0,rows};}).filter(Boolean);
-    const cand={name:f.name,sheets}; const idx=buildIndex(cand);
-    if(!idx.byBox.size){ box.append(el("p","status no","This file has no “Box Number” or “Numero Collo” column. Check that it has a header row.")); return; }
-    list=cand; IDX=idx; const saved=store.set("tt_list",list); renderListInfo();
-    box.append(el("p","hint","List loaded: "+idx.byBox.size+" boxes."+(saved?" It stays saved on this phone.":" It is too large to stay saved: load it again next time.")));
-  }catch(err){ box.append(el("p","status no",window.XLSX?"This file could not be read. Save it as .xlsx and try again.":"Loading an Excel file needs an internet connection. Try again when you are online.")); }
-});
-$("resetList").addEventListener("click",()=>{ try{localStorage.removeItem("tt_list")}catch(e){} list=BUILTIN; IDX=buildIndex(list); renderListInfo(); $("resultBox").innerHTML=""; });
-$("clearScanned").addEventListener("click",()=>{ scanned=new Set(); store.set("tt_scanned",[]); $("resultBox").innerHTML=""; $("resultBox").append(el("p","hint","Ticks cleared.")); });
 
 renderListInfo(); renderRecent();
 if(!window.isSecureContext){ photoFallback(); $("camMsg").textContent="This page is opened as a file, so the live camera may not start. If so, use “Take a photo”."; }
