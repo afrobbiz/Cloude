@@ -143,7 +143,8 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
       </div>
     </div>
     <div class="row">
-      <label class="btn" for="photoIn">Take a photo</label>
+      <button class="btn primary" type="button" id="scanAgainBtn">Scan again</button>
+      <label class="btn" for="photoIn" id="photoBtn" hidden>Take a photo</label>
       <input id="photoIn" type="file" accept="image/*" capture="environment" hidden>
     </div>
     <form class="manual" id="manualForm" autocomplete="off">
@@ -373,7 +374,7 @@ function show(code,format,src){
   }
   const rd=el("div","read"); rd.append(el("span",null,src||"Scanned code"),el("span","mono",code+(format?"  ("+format+")":"")));
   card.append(rd);
-  if(src==="Camera"){ const nb=el("button","btn primary next","Scan the next one"); nb.type="button"; nb.onclick=()=>{resume();$("cam").scrollIntoView({behavior:"smooth",block:"start"});}; card.append(nb); }
+  { const nb=el("button","btn primary next","Scan again"); nb.type="button"; nb.onclick=scanAgain; card.append(nb); }
   box.append(card);
   recent=[{code,where:recentWhere}].concat(recent.filter(x=>x.code!==code)).slice(0,10);
   store.set("tt_recent",recent); renderRecent();
@@ -419,9 +420,12 @@ function zdecodeCanvas(c,hard){
 let stream=null, track=null, scanning=false, timer=null, lastRead="", wakeLock=null;
 const video=$("video"), work=document.createElement("canvas"), wctx=work.getContext("2d",{willReadFrequently:true});
 
+function scanAgain(){ if(stream) resume(); else startCam(); $("cam").scrollIntoView({behavior:"smooth",block:"start"}); }
+function photoFallback(){ $("photoBtn").hidden=false; }
 function camMessage(t,showBtn){ $("camState").hidden=false; $("camMsg").textContent=t; $("startBtn").hidden=!showBtn; }
 async function startCam(){
   if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    photoFallback();
     camMessage("The browser blocks the live camera because this page is not opened from an https address. Use “Take a photo” below instead: it works just as well.",false);
     return;
   }
@@ -429,6 +433,7 @@ async function startCam(){
   try{
     stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});
   }catch(err){
+    photoFallback();
     camMessage(err&&err.name==="NotAllowedError"?"Camera access was denied. Allow it in the browser's site settings, then tap Scan again.":"The camera could not be opened. Use “Take a photo” below.",true);
     return;
   }
@@ -487,6 +492,7 @@ async function tick(){
 }
 
 $("startBtn").addEventListener("click",startCam);
+$("scanAgainBtn").addEventListener("click",scanAgain);
 $("stopBtn").addEventListener("click",stopCam);
 $("torchBtn").addEventListener("click",async()=>{
   if(!track) return; const on=$("torchBtn").getAttribute("aria-pressed")!=="true";
@@ -541,7 +547,7 @@ $("resetList").addEventListener("click",()=>{ try{localStorage.removeItem("tt_li
 $("clearScanned").addEventListener("click",()=>{ scanned=new Set(); store.set("tt_scanned",[]); $("resultBox").innerHTML=""; $("resultBox").append(el("p","hint","Ticks cleared.")); });
 
 renderListInfo(); renderRecent();
-if(!window.isSecureContext) $("camMsg").textContent="This page is opened as a file, so the live camera may not start. If so, use “Take a photo”.";
+if(!window.isSecureContext){ photoFallback(); $("camMsg").textContent="This page is opened as a file, so the live camera may not start. If so, use “Take a photo”."; }
 })();
 </script>
 </body>
