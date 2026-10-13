@@ -51,6 +51,8 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-h
 .cam.paused .laser{display:none}
 @media (prefers-reduced-motion:no-preference){.cam:not(.paused) .laser{animation:sweep 1.6s ease-in-out infinite alternate}@keyframes sweep{from{top:34%}to{top:66%}}}
 
+.scanbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding-block:8px;margin-block:-8px;box-shadow:0 6px 8px -6px rgba(0,0,0,.25)}
+.scanbar .btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;font:700 1.2rem var(--f-display);letter-spacing:.02em;padding:15px 16px;border-radius:12px}
 .manual{display:flex;gap:8px}
 .manual input{flex:1;min-width:0;font:500 1.05rem var(--f-mono);padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .hint{font-size:.85rem;color:var(--muted);margin:0}
@@ -142,9 +144,8 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
         <p id="camMsg">Point the camera at the barcode on the box label, inside the yellow frame.</p>
       </div>
     </div>
-    <div class="row">
-      <button class="btn primary" type="button" id="scanAgainBtn">Scan again</button>
-      <label class="btn" for="photoIn" id="photoBtn" hidden>Take a photo</label>
+    <div class="row" id="photoRow" hidden>
+      <label class="btn" for="photoIn" id="photoBtn">Take a photo</label>
       <input id="photoIn" type="file" accept="image/*" capture="environment" hidden>
     </div>
     <form class="manual" id="manualForm" autocomplete="off">
@@ -152,6 +153,13 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
       <button class="btn" type="submit">Search</button>
     </form>
   </section>
+
+  <div class="scanbar">
+    <button class="btn primary" type="button" id="scanAgainBtn">
+      <svg width="24" height="18" viewBox="0 0 34 26" aria-hidden="true"><g fill="currentColor"><rect width="3" height="26"/><rect x="5" width="1.5" height="26"/><rect x="9" width="3" height="26"/><rect x="14" width="1.5" height="26"/><rect x="17.5" width="4" height="26"/><rect x="23.5" width="1.5" height="26"/><rect x="27" width="2.5" height="26"/><rect x="31.5" width="2.5" height="26"/></g></svg>
+      Scan again
+    </button>
+  </div>
 
   <section id="resultBox" aria-live="polite"></section>
 
@@ -374,11 +382,10 @@ function show(code,format,src){
   }
   const rd=el("div","read"); rd.append(el("span",null,src||"Scanned code"),el("span","mono",code+(format?"  ("+format+")":"")));
   card.append(rd);
-  { const nb=el("button","btn primary next","Scan again"); nb.type="button"; nb.onclick=scanAgain; card.append(nb); }
   box.append(card);
   recent=[{code,where:recentWhere}].concat(recent.filter(x=>x.code!==code)).slice(0,10);
   store.set("tt_recent",recent); renderRecent();
-  box.scrollIntoView({behavior:"smooth",block:"start"});
+  box.style.scrollMarginTop="84px"; box.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
 function renderRecent(){
@@ -421,7 +428,7 @@ let stream=null, track=null, scanning=false, timer=null, lastRead="", wakeLock=n
 const video=$("video"), work=document.createElement("canvas"), wctx=work.getContext("2d",{willReadFrequently:true});
 
 function scanAgain(){ if(stream) resume(); else startCam(); $("cam").scrollIntoView({behavior:"smooth",block:"start"}); }
-function photoFallback(){ $("photoBtn").hidden=false; }
+function photoFallback(){ $("photoRow").hidden=false; }
 function camMessage(t,showBtn){ $("camState").hidden=false; $("camMsg").textContent=t; $("startBtn").hidden=!showBtn; }
 async function startCam(){
   if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
