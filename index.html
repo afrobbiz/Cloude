@@ -44,6 +44,7 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-h
 .fb.bad{background:var(--warn);color:#fff}
 .fb.dup{background:var(--chip);color:var(--ink)}
 .fb.info{background:var(--chip);color:var(--ink)}
+.fb.amber{background:var(--found);color:var(--found-ink)}
 .count{padding:12px 16px 4px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .count b{font:700 2rem/1 var(--f-display);font-variant-numeric:tabular-nums}
 .count span{color:var(--muted)}
@@ -288,11 +289,41 @@ function buildIndex(list){
     const k=officeKey(t); if(!k) continue;
     if(!byOffice.has(k)) byOffice.set(k,[]); byOffice.get(k).push(t);
   }
-  const byId=new Map(); for(const t of byTav.keys()) byId.set(tableId(t),t);
-  return {byBox,byTav,byFan,byOffice,byId};
+  const idx={byBox,byTav,byFan,byOffice}; buildUnits(idx);
+  return idx;
 }
 function tableKey(t){ const s=splitTav(t); return s.code.toUpperCase()+"|"+s.dest.replace(/\s+/g," ").trim().toUpperCase(); }
-function tableId(t){ const b=new TextEncoder().encode(tableKey(t)); let h=0x811c9dc5; for(const x of b){ h^=x; h=Math.imul(h,0x01000193)>>>0; } return "T"+h.toString(36).toUpperCase().padStart(7,"0"); }
+function hashId(key){ const b=new TextEncoder().encode(key); let h=0x811c9dc5; for(const x of b){ h^=x; h=Math.imul(h,0x01000193)>>>0; } return "T"+h.toString(36).toUpperCase().padStart(7,"0"); }
+function tableId(t){ return hashId(tableKey(t)); }
+const pk=x=>x.fan||x.des||"";
+const gcd=(a,b)=>b?gcd(b,a%b):a;
+// Identical tables in the same room: the group's part counts share a common factor n (e.g. 2 tops, 8 legs… = 2 tables).
+// Each table gets its own share of the boxes and its own sign code. Cabinets are not split.
+// The code of the whole group (first signs printed) keeps working and checks all of them together.
+function buildUnits(idx){
+  const units=new Map(), unitOfBox=new Map();
+  for(const [t,arr] of idx.byTav){
+    const cab=arr.some(x=>/cassone contenitore/i.test(x.des||""));
+    const groups=new Map(); arr.forEach(x=>{const k=pk(x); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(x);});
+    const n=cab?1:[...groups.values()].map(g=>g.length).reduce(gcd);
+    const gid=tableId(t);
+    units.set(gid,{id:gid,tav:t,k:0,n:1,total:n,boxes:arr.slice(),quota:new Map([...groups].map(([k,g])=>[k,g.length]))});
+    if(n>1){
+      const parts=Array.from({length:n},()=>[]);
+      for(const g of groups.values()){
+        const sorted=g.slice().sort((a,b)=>{const fa=a.fea||"",fb=b.fea||""; return fa<fb?-1:fa>fb?1:(+a.box)-(+b.box);});
+        const q=sorted.length/n; for(let i=0;i<n;i++) parts[i].push(...sorted.slice(i*q,(i+1)*q));
+      }
+      for(let i=0;i<n;i++){
+        const id=hashId(tableKey(t)+"|"+(i+1)+"/"+n);
+        units.set(id,{id,tav:t,k:i+1,n,total:n,boxes:parts[i],quota:new Map([...groups].map(([k,g])=>[k,g.length/n]))});
+        parts[i].forEach(x=>unitOfBox.set(norm(x.box),id));
+      }
+    }
+  }
+  idx.units=units; idx.unitOfBox=unitOfBox;
+}
+function unitLabel(u){ return u.k?"Table "+u.k+" of "+u.n:(u.total>1?"All "+u.total+" tables":""); }
 function parseTableId(text){ const m=cellStr(text).match(/(?:#check-|^)(T[0-9A-Z]{7})$/i); return m?m[1].toUpperCase():null; }
 function officeKey(t){ const s=splitTav(t); const fl=(s.code.match(/^(\d+)-/)||[])[1]||""; return s.dest?fl+"|"+s.dest.replace(/\s+/g," ").toUpperCase():""; }
 function splitTav(t){ const m=cellStr(t).match(/^(\S+)\s+(.*)$/); return m?{code:m[1],dest:m[2].trim()}:{code:cellStr(t),dest:""}; }
@@ -358,7 +389,7 @@ function partsList(arr,current,done){
 
 function show(code,format,src){
   const tid=parseTableId(code);
-  const r=tid&&IDX.byId.has(tid)?{type:"table",id:tid}:lookup(code);
+  const r=tid&&IDX.units.has(tid)?{type:"table",id:tid}:lookup(code);
   const box=$("resultBox"); box.innerHTML="";
   const card=el("div","result");
   let recentWhere="not found";
@@ -371,6 +402,7 @@ function show(code,format,src){
     card.append(fb);
     const top=el("div","tav");
     top.append(el("span","label","Table"),el("span","code",t.code||"—"));
+    const uid=IDX.unitOfBox.get(norm(e.box)); if(uid){ const u=IDX.units.get(uid); top.append(el("span","dest",unitLabel(u)+" · put it by sign "+u.k+"/"+u.n)); }
     card.append(top);
     const sib=IDX.byTav.get(e.tav)||[e];
     const notes=[...new Set(sib.flatMap(x=>x.notes||[]))];
@@ -413,35 +445,51 @@ function show(code,format,src){
 
 /* ============ TABLE CHECK ============ */
 function tableLabel(t){ const s=splitTav(t); return s.code+" · "+s.dest.replace(/\s+/g," "); }
+function where(t){ const s=splitTav(t), flc=(s.code.match(/^(\d+)-/)||[])[1]; return s.code+" · "+s.dest.replace(/\s+/g," ")+" · Floor "+(+flc||"?"); }
 function chkState(id){ if(!checks[id]) checks[id]={found:[],wrong:[]}; return checks[id]; }
 function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small:"Now scan the boxes of this table."}; chk.cur=null; renderCheck(); if(stream) resume(); }
 function checkScan(text,format){
   const tid=parseTableId(text);
   if(tid){
-    if(IDX.byId.has(tid)){ if(location.hash!=="#check-"+tid) location.hash="check-"+tid; else openTable(tid); }
+    if(IDX.units.has(tid)){ if(location.hash!=="#check-"+tid) location.hash="check-"+tid; else openTable(tid); }
     else { chk.fb={cls:"bad",big:"Unknown table code",small:"This sign is not in the current list."}; renderCheck(); }
     return "info";
   }
   const r=lookup(text);
   if(r.type!=="box"){ chk.fb={cls:"bad",big:"Not in the list",small:"Code read: "+text}; chk.cur=null; renderCheck(); return "bad"; }
   const e=r.e, k=norm(e.box);
-  if(!chk.id){ const s=splitTav(e.tav); chk.fb={cls:"info",big:"Scan the table sign first",small:"This box belongs to "+s.code+" · "+s.dest.replace(/\s+/g," ")}; renderCheck(); return "info"; }
-  const tav=IDX.byId.get(chk.id), st=chkState(chk.id);
+  if(!chk.id){ chk.fb={cls:"info",big:"Scan the table sign first",small:"This box belongs to "+where(e.tav)}; renderCheck(); return "info"; }
+  const u=IDX.units.get(chk.id), st=chkState(u.id);
   chk.cur=e;
-  if(e.tav===tav){
-    if(st.found.includes(k)) chk.fb={cls:"dup",big:"Already counted · "+e.box,small:e.des||""};
-    else { st.found.push(k); chk.fb={cls:"ok",big:"✓ Belongs here · "+e.box,small:e.des||""}; }
+  if(e.tav!==u.tav){
+    chk.fb={cls:"bad",big:"✗ WRONG TABLE · "+e.box,small:"It belongs to "+where(e.tav)};
+    if(!st.wrong.some(w=>w.box===e.box)) st.wrong.push({box:e.box,to:where(e.tav)});
+  } else if(st.found.includes(k)){
+    chk.fb={cls:"dup",big:"Already counted · "+e.box,small:e.des||""};
   } else {
-    const s=splitTav(e.tav), flc=(s.code.match(/^(\d+)-/)||[])[1];
-    chk.fb={cls:"bad",big:"✗ WRONG TABLE · "+e.box,small:"It belongs to "+s.code+" · "+s.dest.replace(/\s+/g," ")+" · Floor "+(+flc||"?")};
-    if(!st.wrong.some(w=>w.box===e.box)) st.wrong.push({box:e.box,to:s.code+" · "+s.dest.replace(/\s+/g," ")+" · Floor "+(+flc||"?")});
+    const sib=u.k?[...IDX.units.values()].filter(x=>x.tav===u.tav&&x.k&&x.id!==u.id):[];
+    const other=sib.find(x=>(checks[x.id]&&checks[x.id].found.includes(k)));
+    const have=st.found.filter(b=>pk(IDX.byBox.get(b)||{})===pk(e)).length, quota=u.quota.get(pk(e))||0;
+    const home=IDX.unitOfBox.get(k), hu=home&&IDX.units.get(home);
+    if(other){ chk.fb={cls:"amber",big:"Already counted at table "+other.k+" of "+other.n+" · "+e.box,small:"Same table code in this room. Leave it there."}; }
+    else if(have>=quota){ chk.fb={cls:"amber",big:"Not needed here · "+e.box,small:"This table already has all its "+(e.des||"parts")+"."+(hu&&hu.id!==u.id?" Take it to table "+hu.k+" of "+hu.n+".":"")}; }
+    else { st.found.push(k); chk.fb={cls:"ok",big:"✓ Belongs here · "+e.box,small:(e.des||"")+(u.k&&hu&&hu.id!==u.id?" · listed on sign "+hu.k+"/"+hu.n+", same part: fine here":"")}; }
   }
   saveChecks(); renderCheck();
-  return chk.fb.cls;
+  return chk.fb.cls==="amber"?"dup":chk.fb.cls;
+}
+function pickerOptions(){
+  const out=[];
+  for(const t of IDX.byTav.keys()){
+    const split=[...IDX.units.values()].filter(u=>u.tav===t&&u.k);
+    if(split.length) split.sort((a,b)=>a.k-b.k).forEach(u=>out.push([tableLabel(t)+" · "+u.k+"/"+u.n,u.id,t]));
+    else out.push([tableLabel(t),tableId(t),t]);
+  }
+  return out.sort((a,b)=>a[0].localeCompare(b[0],"en",{numeric:true}));
 }
 function renderCheck(){
   const P=$("checkPanel"); P.innerHTML="";
-  if(!chk.id||!IDX.byId.has(chk.id)){
+  if(!chk.id||!IDX.units.has(chk.id)){
     chk.id=null;
     const c=el("div","ck-start");
     c.append(el("h2",null,"Scan the code on the table sign"));
@@ -450,31 +498,47 @@ function renderCheck(){
     const sel=el("select"); sel.id="tablePick"; sel.setAttribute("aria-label","Choose the table");
     sel.append(new Option("Choose the table…",""));
     const byFloor=new Map();
-    [...IDX.byTav.keys()].sort((a,b)=>tableLabel(a).localeCompare(tableLabel(b),"en",{numeric:true})).forEach(t=>{ const fl=(splitTav(t).code.match(/^(\d+)-/)||[])[1]||"?"; if(!byFloor.has(fl)) byFloor.set(fl,[]); byFloor.get(fl).push(t); });
-    for(const [fl,ts] of byFloor){ const og=document.createElement("optgroup"); og.label="Floor "+(+fl||fl); ts.forEach(t=>og.append(new Option(tableLabel(t),tableId(t)))); sel.append(og); }
+    pickerOptions().forEach(o=>{ const fl=(splitTav(o[2]).code.match(/^(\d+)-/)||[])[1]||"?"; if(!byFloor.has(fl)) byFloor.set(fl,[]); byFloor.get(fl).push(o); });
+    for(const [fl,os] of byFloor){ const og=document.createElement("optgroup"); og.label="Floor "+(+fl||fl); os.forEach(o=>og.append(new Option(o[0],o[1]))); sel.append(og); }
     sel.onchange=()=>{ if(sel.value) location.hash="check-"+sel.value; };
     c.append(sel); P.append(c); return;
   }
-  const tav=IDX.byId.get(chk.id), s=splitTav(tav), arr=IDX.byTav.get(tav)||[], st=chkState(chk.id);
-  const found=new Set(st.found), done=arr.filter(x=>found.has(norm(x.box))).length;
+  const u=IDX.units.get(chk.id), tav=u.tav, s=splitTav(tav), all=IDX.byTav.get(tav)||[], st=chkState(u.id);
+  const found=new Set(st.found), total=u.boxes.length, done=Math.min(st.found.length,total);
   const flc=(s.code.match(/^(\d+)-/)||[])[1]||"";
   const card=el("div","result");
   if(chk.fb){ const f=el("div","fb "+chk.fb.cls); f.append(el("span",null,chk.fb.big)); if(chk.fb.small) f.append(el("small",null,chk.fb.small)); card.append(f); }
   const fb=el("div","floorband"); fb.style.background=FLOORCOL[flc]||"#333";
-  fb.append(el("span","lbl","Checking table"),el("span","fl",s.code),el("span","to","Floor "+(+flc||"?")+" · "+s.dest.replace(/\s+/g," ")));
+  fb.append(el("span","lbl","Checking table"+(unitLabel(u)?" · "+unitLabel(u):"")),el("span","fl",s.code+(u.k?"  "+u.k+"/"+u.n:"")),el("span","to","Floor "+(+flc||"?")+" · "+s.dest.replace(/\s+/g," ")));
   card.append(fb);
-  const notes=[...new Set(arr.flatMap(x=>x.notes||[]))];
+  const notes=[...new Set(all.flatMap(x=>x.notes||[]))];
   if(notes.length) card.append(el("div","warn","Note in the list: "+notes.join(" · ")));
-  const cnt=el("div","count"); cnt.append(el("b",null,done+" / "+arr.length),el("span",null,"boxes found"));
+  const cnt=el("div","count"); cnt.append(el("b",null,done+" / "+total),el("span",null,"boxes found"));
   card.append(cnt);
-  const pr=el("div","progress"); pr.style.margin="6px 16px 0"; const bar=el("i"); bar.style.width=Math.round(done/arr.length*100)+"%"; pr.append(bar); card.append(pr);
-  if(done===arr.length) card.append(el("div","allok","All boxes of this table are here."));
-  const miss=arr.filter(x=>!found.has(norm(x.box)));
-  if(miss.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+miss.length+")"),el("span","mono",miss.map(x=>x.box).join(" · "))); card.append(m); }
+  const pr=el("div","progress"); pr.style.margin="6px 16px 0"; const bar=el("i"); bar.style.width=Math.round(done/total*100)+"%"; pr.append(bar); card.append(pr);
+  if(done>=total) card.append(el("div","allok","All boxes of this table are here."));
+  // per part: how many are still needed, and which listed boxes are not found yet
+  const groups=new Map(); u.boxes.forEach(x=>{const k=pk(x); if(!groups.has(k)) groups.set(k,{items:[],extra:[]}); groups.get(k).items.push(x);});
+  st.found.forEach(b=>{ const x=IDX.byBox.get(b); if(x&&!u.boxes.includes(x)){ const k=pk(x); if(!groups.has(k)) groups.set(k,{items:[],extra:[]}); groups.get(k).extra.push(x);} });
+  const missLines=[];
+  for(const [k,g] of groups){ const have=g.items.filter(x=>found.has(norm(x.box))).length+g.extra.length; const need=(u.quota.get(k)||0)-have; if(need>0) missLines.push(need+" × "+((g.items[0]||g.extra[0]).des||"part")+": "+g.items.filter(x=>!found.has(norm(x.box))).map(x=>x.box).join(" · ")); }
+  if(missLines.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); missLines.forEach(l=>m.append(el("div","mono",l))); card.append(m); }
   if(st.wrong.length){ const w=el("div","wrongs"); w.append(el("b",null,"Wrong boxes found here ("+st.wrong.length+") · move them")); st.wrong.forEach(x=>w.append(el("span",null,x.box+" → "+x.to))); card.append(w); }
-  card.append(partsList(arr,chk.cur&&chk.cur.tav===tav?chk.cur:null,found));
+  const ul=el("ul","parts");
+  for(const [k,g] of groups){
+    const first=g.items[0]||g.extra[0], li=el("li","part"), h=el("div","part-h");
+    h.append(el("b",null,first.des||"Box"),el("span","qty","× "+(u.quota.get(k)||g.items.length)));
+    li.append(h);
+    if(first.fea) li.append(el("span","feat",first.fea+(first.fan?" · "+first.fan:"")));
+    const ch=el("div","chips");
+    g.items.slice().sort((a,b)=>(+a.box)-(+b.box)).forEach(x=>{ const ok=found.has(norm(x.box)), me=chk.cur&&chk.cur===x; const c=el("span","chip"+(me&&ok?" me":ok?" ok":""),(ok&&!me?"✓ ":"")+x.box); ch.append(c); });
+    g.extra.forEach(x=>{ const me=chk.cur&&chk.cur===x; ch.append(el("span","chip"+(me?" me":" ok"),"✓ "+x.box+" ↔")); });
+    li.append(ch); ul.append(li);
+  }
+  card.append(ul);
   const lg=el("div","legend");
   [["var(--ok-bg)","Found here"],["var(--surface)","Missing"]].forEach(([c,t])=>{const sp=el("span");const i=el("i");i.style.background=c;sp.append(i,t);lg.append(sp);});
+  if(u.k) lg.append(el("span",null,"↔ swapped with the identical table"));
   card.append(lg);
   const act=el("div","ck-actions");
   const ch=el("a","btn","Change table"); ch.href="#check";
@@ -494,7 +558,7 @@ function route(){
   $("manualIn").placeholder=screen==="check"?"or type a box number":"or type the box number";
   if(screen==="check"){
     const m=h.match(/^check-(T[0-9A-Z]{7})$/i);
-    if(m&&IDX.byId.has(m[1].toUpperCase())) openTable(m[1].toUpperCase());
+    if(m&&IDX.units.has(m[1].toUpperCase())) openTable(m[1].toUpperCase());
     else { chk.id=null; chk.fb=null; renderCheck(); }
   }
 }
