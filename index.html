@@ -12,7 +12,7 @@
 :root{
   --bg:#eef1f2; --surface:#ffffff; --ink:#15232b; --muted:#5d6d75; --line:#d3dade;
   --accent:#0f6e6a; --accent-ink:#ffffff; --found:#ffd34d; --found-ink:#2a2200;
-  --warn:#b4471f; --chip:#e1e8ea; --ok:#1d7a3e;
+  --warn:#b4471f; --chip:#e1e8ea; --ok:#1d7a3e; --ok-bg:#dcefe2; --warn-bg:#fbe5da;
   --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -21,7 +21,7 @@
 @media (prefers-color-scheme: dark){:root{
   --bg:#0f1619; --surface:#172126; --ink:#e3eaed; --muted:#93a3aa; --line:#2a383e;
   --accent:#3fb3ab; --accent-ink:#06201e; --found:#f2c94c; --found-ink:#231b00;
-  --warn:#f08a62; --chip:#223036; --ok:#5ccf86; color-scheme:dark }}
+  --warn:#f08a62; --chip:#223036; --ok:#5ccf86; --ok-bg:#173a26; --warn-bg:#3a1f15; color-scheme:dark }}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink)}
 body{font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
@@ -74,14 +74,35 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-h
 .status.maybe{background:var(--chip)}
 .read{padding:10px 16px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .read .mono{color:var(--ink);overflow-wrap:anywhere}
-details.sib{border-top:1px solid var(--line)}
-details.sib summary{padding:12px 16px;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;gap:8px}
-details.sib summary span{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
-.sib ul{list-style:none;margin:0;padding:0 16px 12px;display:flex;flex-direction:column}
-.sib li{display:grid;grid-template-columns:1.4em 7.5em minmax(0,1fr);gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.88rem;align-items:baseline}
-.sib li.me{font-weight:600}
-.sib li .ck{color:var(--ok);font-weight:700}
-.sib li .mono{font-variant-numeric:tabular-nums}
+.warn{background:var(--warn-bg);color:var(--warn);padding:10px 16px;font-weight:600}
+.grp{border-top:1px solid var(--line)}
+.grp-h{padding:12px 16px 6px;display:flex;flex-direction:column;gap:6px}
+.grp-h .ttl{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.grp-h .ttl b{font:700 1.1rem var(--f-display)}
+.grp-h .ttl span{color:var(--muted);font-size:.88rem;font-variant-numeric:tabular-nums}
+.progress{height:6px;background:var(--chip);border-radius:3px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--ok)}
+.parts{list-style:none;margin:0;padding:0 16px 10px;display:flex;flex-direction:column}
+.part{padding:10px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.part:last-child{border-bottom:0}
+.part-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.part-h b{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.part-h .qty{font:700 1.05rem var(--f-display);font-variant-numeric:tabular-nums;flex:none}
+.part .feat{font-size:.82rem;color:var(--muted);margin-top:-4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 .82rem var(--f-mono);border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--surface);color:var(--ink);cursor:pointer;font-variant-numeric:tabular-nums}
+.chip.ok{background:var(--ok-bg);border-color:var(--ok)}
+.chip.me{background:var(--found);color:var(--found-ink);border-color:var(--found-ink);font-weight:700}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--muted);padding:0 16px 12px}
+.legend i{display:inline-block;width:.9em;height:.9em;border-radius:3px;vertical-align:-1px;margin-right:4px;border:1px solid var(--line)}
+details.more{border-top:1px solid var(--line)}
+details.more>summary{padding:12px 16px;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+details.more>summary span{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+details.other{margin:0 16px 8px;border:1px solid var(--line);border-radius:8px}
+details.other>summary{padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+details.other>summary b{font:700 1rem var(--f-display)}
+details.other>summary span{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums;text-align:right}
+details.other .parts{padding:0 12px 8px}
 .choices{list-style:none;margin:0;padding:0 16px 14px;display:flex;flex-direction:column;gap:6px}
 .choices button{all:unset;cursor:pointer;display:block;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:.92rem}
 .choices button b{font-family:var(--f-mono)}
@@ -185,7 +206,7 @@ function headerIndex(rows){
   return best;
 }
 function buildIndex(list){
-  const byBox=new Map(), byTav=new Map(), byFan=new Map();
+  const byBox=new Map(), byTav=new Map(), byFan=new Map(), byOffice=new Map();
   for(const sh of list.sheets){
     const h=headerIndex(sh.rows); if(h<0) continue;
     const hdr=sh.rows[h].map(cellStr);
@@ -199,12 +220,16 @@ function buildIndex(list){
       if(!r.some(filled)){carry={};continue;}
       const rec={};
       for(const k in col){rec[k]=cellStr(r[col[k]]);}
+      // a remark written in the table column (e.g. "PROGETTO CAMBIATO…") is a note, not a new table
+      if(rec.tav&&carry.tav&&!/\d/.test(rec.tav.split(/\s+/)[0])){ rec.note=rec.tav; rec.tav=""; }
+      if(rec.note) carry.note=rec.note; else if(carry.note) rec.note=carry.note;
       for(const k of CARRY){ if(col[k]==null) continue; if(rec[k]) carry[k]=rec[k]; else if(carry[k]) rec[k]=carry[k]; }
       const box=rec.box; if(!box||COLS.box.test(box)) continue;
       const key=norm(box);
       let e=byBox.get(key);
       if(!e){e={box,where:[]};byBox.set(key,e);}
-      for(const k in rec){ if(rec[k]&&!e[k]) e[k]=rec[k]; }
+      for(const k in rec){ if(k==="note") continue; if(rec[k]&&!e[k]) e[k]=rec[k]; }
+      if(rec.note){ e.notes=e.notes||[]; if(!e.notes.includes(rec.note)) e.notes.push(rec.note); }
       if(piano&&!e.piano) e.piano=piano;
       e.where.push(sh.name+" r."+(i+1+(sh.r0||0)));
     }
@@ -213,8 +238,13 @@ function buildIndex(list){
     if(e.tav){ if(!byTav.has(e.tav)) byTav.set(e.tav,[]); byTav.get(e.tav).push(e); }
     if(e.fan){ const k=norm(e.fan); if(!byFan.has(k)) byFan.set(k,new Set()); if(e.tav) byFan.get(k).add(e.tav); }
   }
-  return {byBox,byTav,byFan};
+  for(const [t,arr] of byTav){
+    const k=officeKey(t); if(!k) continue;
+    if(!byOffice.has(k)) byOffice.set(k,[]); byOffice.get(k).push(t);
+  }
+  return {byBox,byTav,byFan,byOffice};
 }
+function officeKey(t){ const s=splitTav(t); const fl=(s.code.match(/^(\d+)-/)||[])[1]||""; return s.dest?fl+"|"+s.dest.replace(/\s+/g," ").toUpperCase():""; }
 function splitTav(t){ const m=cellStr(t).match(/^(\S+)\s+(.*)$/); return m?{code:m[1],dest:m[2].trim()}:{code:cellStr(t),dest:""}; }
 function pianoLabel(e){
   if(e.piano){const m=e.piano.match(/(\d+)/); return m?"Floor "+m[1]:e.piano;}
@@ -248,6 +278,29 @@ function lookup(code){
   return {type:"none"};
 }
 
+// pieces grouped by part type (same description + features), with every box number as a chip
+function partsList(arr,current){
+  const groups=new Map();
+  arr.forEach(x=>{const k=(x.des||"Box")+"|"+(x.fea||""); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(x);});
+  const ul=el("ul","parts");
+  for(const items of groups.values()){
+    const li=el("li","part"); const h=el("div","part-h");
+    h.append(el("b",null,items[0].des||"Box"),el("span","qty","× "+items.length));
+    li.append(h);
+    if(items[0].fea) li.append(el("span","feat",items[0].fea+(items[0].fan?" · "+items[0].fan:"")));
+    const ch=el("div","chips");
+    items.slice().sort((a,b)=>a.box.localeCompare(b.box,"en",{numeric:true})).forEach(x=>{
+      const isMe=current&&norm(x.box)===norm(current.box), ok=scanned.has(norm(x.box));
+      const b=el("button","chip"+(isMe?" me":ok?" ok":""),(ok&&!isMe?"✓ ":"")+x.box); b.type="button";
+      b.title=isMe?"This box":ok?"Already scanned":"Still to find";
+      b.onclick=()=>show(x.box,null,"From the list");
+      ch.append(b);
+    });
+    li.append(ch); ul.append(li);
+  }
+  return ul;
+}
+
 function show(code,format,src){
   const r=lookup(code);
   const box=$("resultBox"); box.innerHTML="";
@@ -256,32 +309,53 @@ function show(code,format,src){
 
   if(r.type==="box"){
     const e=r.e, t=splitTav(e.tav);
-    scanned.add(norm(e.box)); store.set("tt_scanned",[...scanned]);
+    if(src!=="From the list"){ scanned.add(norm(e.box)); store.set("tt_scanned",[...scanned]); }
     const top=el("div","tav");
     top.append(el("span","label","Table"),el("span","code",t.code||"—"));
     if(t.dest) top.append(el("span","dest",t.dest));
     card.append(top);
+    const sib=IDX.byTav.get(e.tav)||[e];
+    const notes=[...new Set(sib.flatMap(x=>x.notes||[]))];
+    if(notes.length) card.append(el("div","warn","Note in the list: "+notes.join(" · ")));
+    if(r.fuzzy) card.append(el("div","status maybe","The scanned code does not exactly match the box number. Check that this is the right box."));
     const meta=el("div","meta");
     [["Floor",pianoLabel(e)||"—"],["Contract",e.con||"—"],["Model",(e.mod||"—").replace(/\s*-\s*\d+\s*PZ\.?/i,"")]].forEach(([l,v])=>{const d=el("div");d.append(el("span","label",l),el("b",null,v));meta.append(d);});
     card.append(meta);
+
+    // all pieces of this table for this office
+    const g=el("section","grp");
+    const done=sib.filter(x=>scanned.has(norm(x.box))).length;
+    const gh=el("div","grp-h"); const ttl=el("div","ttl");
+    ttl.append(el("b",null,sib.length===1?"Only piece of this table for this office":"All pieces of this table for this office"),el("span",null,sib.length+(sib.length===1?" box":" boxes")+" · "+done+" scanned"));
+    const pr=el("div","progress"); const bar=el("i"); bar.style.width=Math.round(done/sib.length*100)+"%"; pr.append(bar);
+    gh.append(ttl,pr); g.append(gh);
+    g.append(partsList(sib,e));
+    const lg=el("div","legend");
+    [["var(--found)","This box"],["var(--ok-bg)","Already scanned"],["var(--surface)","Still to find"]].forEach(([c,t])=>{const s=el("span");const i=el("i");i.style.background=c;s.append(i,t);lg.append(s);});
+    g.append(lg);
+    card.append(g);
+
+    // this box
     const p=el("div","piece");
     p.append(el("span","label","This box"));
     const dl=el("dl","fields");
     [["Box number",e.box,true],["Part",e.des],["Fantoni code",e.fan,true],["Features",e.fea],["Packing list",e.pl],["Position",e.pos],["In the list",e.where.join(" · ").replace(/ r\./g," row ")]].forEach(([n,v,mono])=>{ if(!v) return; dl.append(el("dt",null,n)); dl.append(el("dd",mono?"mono":null,v)); });
     p.append(dl); card.append(p);
-    if(r.fuzzy){ card.append(el("div","status maybe","The scanned code does not exactly match the box number. Check that this is the right box.")); }
-    // boxes of the same table
-    const sib=(IDX.byTav.get(e.tav)||[]).slice().sort((a,b)=>a.box.localeCompare(b.box,"it",{numeric:true}));
-    if(sib.length>1){
-      const done=sib.filter(s=>scanned.has(norm(s.box))).length;
-      const d=el("details","sib");
-      const s=el("summary"); s.append(el("b",null,"Boxes of this table"),el("span",null,done+" of "+sib.length+" ticked"));
+
+    // other tables going to the same office
+    const others=(IDX.byOffice.get(officeKey(e.tav))||[]).filter(x=>x!==e.tav);
+    if(others.length){
+      const d=el("details","more");
+      const s=el("summary"); s.append(el("b",null,"Other tables in this office"),el("span",null,String(others.length)));
       d.append(s);
-      const ul=el("ul");
-      sib.forEach(x=>{const li=el("li",norm(x.box)===norm(e.box)?"me":null);li.append(el("span","ck",scanned.has(norm(x.box))?"✓":""),el("span","mono",x.box),el("span",null,x.des||""));ul.append(li);});
-      d.append(ul); card.append(d);
-      const m=(e.mod||"").match(/(\d+)\s*PZ/i);
-      if(m&&sib.length>Number(m[1])) s.lastChild.textContent+=" · "+Math.round(sib.length/Number(m[1]))+" identical tables";
+      others.forEach(ot=>{
+        const arr=IDX.byTav.get(ot)||[]; const od=el("details","other"); const os=el("summary");
+        const dn=arr.filter(x=>scanned.has(norm(x.box))).length;
+        const mod=((arr[0]&&arr[0].mod)||"").replace(/\s*-\s*\d+\s*PZ\.?/i,"");
+        os.append(el("b",null,splitTav(ot).code),el("span",null,(mod?mod+" · ":"")+arr.length+" boxes · "+dn+" scanned"));
+        od.append(os,partsList(arr,null)); d.append(od);
+      });
+      card.append(d);
     }
     recentWhere=t.code+(t.dest?" · "+t.dest:"");
   } else if(r.type==="cand"){
