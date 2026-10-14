@@ -48,6 +48,18 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-h
 .count{padding:12px 16px 4px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .count b{font:700 2rem/1 var(--f-display);font-variant-numeric:tabular-nums}
 .count span{color:var(--muted)}
+.comps{list-style:none;margin:8px 0 0;padding:0 16px 6px;display:flex;flex-direction:column}
+.comp{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--line);border-left:4px solid transparent}
+.comp.part{border-left-color:var(--found)}
+.comp.full{border-left-color:var(--ok);background:var(--ok-bg)}
+.comp.hot{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
+.ci{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cc{font:700 1.2rem var(--f-mono);letter-spacing:.01em}
+.cd{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+.ctr{display:flex;align-items:center;gap:6px;flex:none}
+.ctr .n{font:700 1.15rem var(--f-display);min-width:3.4em;text-align:center;font-variant-numeric:tabular-nums}
+.pm{width:40px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:700 1.3rem var(--f-body);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.pm:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
 .allok{margin:8px 16px 0;padding:10px 12px;border-radius:8px;background:var(--ok);color:#fff;font-weight:700}
 .missing{padding:10px 16px;font-size:.9rem;border-top:1px solid var(--line)}
 .missing b{display:block;margin-bottom:4px}
@@ -162,7 +174,7 @@ footer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--lin
     <span class="listmeta" id="listMeta"></span>
     <nav class="modes" aria-label="Pages" id="pageNav" hidden>
       <a href="#sort" id="tabSort" aria-current="page"><b>Sorting</b><span>Where does this box go?</span></a>
-      <a href="#check" id="tabCheck"><b>Table check</b><span>Scan the sign, then the boxes</span></a>
+      <a href="#check" id="tabCheck"><b>Table check</b><span>Scan the sign, then the components</span></a>
     </nav>
   </header>
 
@@ -339,8 +351,9 @@ const FLOORCOL={"04":"#0f6e6a","05":"#b8430a","06":"#1d4ed8","07":"#7a22b8"};
 try{["tt_scanned","tt_sorted","tt_checked","tt_mode"].forEach(k=>localStorage.removeItem(k))}catch(e){}
 let screen="sort";
 // table check: per-table sets of boxes found, and wrong boxes seen at that table
-let checks=store.get("tt_chk")||{};
-const saveChecks=()=>store.set("tt_chk",checks);
+let checks=store.get("tt_chk2")||{};
+try{localStorage.removeItem("tt_chk")}catch(e){}
+const saveChecks=()=>store.set("tt_chk2",checks);
 let chk={id:null,fb:null,cur:null};
 
 function renderListInfo(){
@@ -446,8 +459,27 @@ function show(code,format,src){
 /* ============ TABLE CHECK ============ */
 function tableLabel(t){ const s=splitTav(t); return s.code+" · "+s.dest.replace(/\s+/g," "); }
 function where(t){ const s=splitTav(t), flc=(s.code.match(/^(\d+)-/)||[])[1]; return s.code+" · "+s.dest.replace(/\s+/g," ")+" · Floor "+(+flc||"?"); }
-function chkState(id){ if(!checks[id]) checks[id]={found:[],wrong:[]}; return checks[id]; }
-function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small:"Now scan the boxes of this table."}; chk.cur=null; renderCheck(); if(stream) resume(); }
+// A table is checked by component (Fantoni code + size), not by box label:
+// many tables share the same structural parts and boxes carry several labels.
+const ck=x=>(x.fan||x.des||"?")+"|"+(x.fea||"");
+function chkState(id){ if(!checks[id]) checks[id]={cnt:{},boxes:[],log:[]}; return checks[id]; }
+function needs(u){ // component -> {need, sample box}
+  const m=new Map();
+  u.boxes.forEach(x=>{ const k=ck(x); if(!m.has(k)) m.set(k,{need:0,x}); m.get(k).need++; });
+  return m;
+}
+function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small:"Scan or type the component codes, or use + and − on the list."}; chk.cur=null; renderCheck(); if(stream) resume(); }
+// find which component of this table a code refers to: a box number (gives code + size), or a component code typed/scanned
+function matchComponent(text,u){
+  const req=needs(u), q=norm(text);
+  const r=lookup(text);
+  if(r.type==="box"){ const e=r.e; return {box:e, keys:req.has(ck(e))?[ck(e)]:[], fan:e.fan||"", des:e.des||""}; }
+  const keys=[...req.keys()].filter(k=>{ const f=norm(k.split("|")[0]); return f&&(q===f||(q.length>=4&&(q.includes(f)||f.endsWith(q)))); });
+  if(keys.length){ const x=req.get(keys[0]).x; return {keys,fan:x.fan||"",des:x.des||""}; }
+  if(IDX.byFan.has(q)){ const any=[...IDX.byBox.values()].find(x=>norm(x.fan)===q); return {keys:[],fan:any?any.fan:q,des:any?any.des:""}; }
+  return null;
+}
+function addCount(st,k,req){ const have=st.cnt[k]||0, need=req.get(k).need; if(have>=need) return false; st.cnt[k]=have+1; return true; }
 function checkScan(text,format){
   const tid=parseTableId(text);
   if(tid){
@@ -455,28 +487,27 @@ function checkScan(text,format){
     else { chk.fb={cls:"bad",big:"Unknown table code",small:"This sign is not in the current list."}; renderCheck(); }
     return "info";
   }
-  const r=lookup(text);
-  if(r.type!=="box"){ chk.fb={cls:"bad",big:"Not in the list",small:"Code read: "+text}; chk.cur=null; renderCheck(); return "bad"; }
-  const e=r.e, k=norm(e.box);
-  if(!chk.id){ chk.fb={cls:"info",big:"Scan the table sign first",small:"This box belongs to "+where(e.tav)}; renderCheck(); return "info"; }
-  const u=IDX.units.get(chk.id), st=chkState(u.id);
-  chk.cur=e;
-  if(e.tav!==u.tav){
-    chk.fb={cls:"bad",big:"✗ WRONG TABLE · "+e.box,small:"It belongs to "+where(e.tav)};
-    if(!st.wrong.some(w=>w.box===e.box)) st.wrong.push({box:e.box,to:where(e.tav)});
-  } else if(st.found.includes(k)){
-    chk.fb={cls:"dup",big:"Already counted · "+e.box,small:e.des||""};
-  } else {
-    const sib=u.k?[...IDX.units.values()].filter(x=>x.tav===u.tav&&x.k&&x.id!==u.id):[];
-    const other=sib.find(x=>(checks[x.id]&&checks[x.id].found.includes(k)));
-    const have=st.found.filter(b=>pk(IDX.byBox.get(b)||{})===pk(e)).length, quota=u.quota.get(pk(e))||0;
-    const home=IDX.unitOfBox.get(k), hu=home&&IDX.units.get(home);
-    if(other){ chk.fb={cls:"amber",big:"Already counted at table "+other.k+" of "+other.n+" · "+e.box,small:"Same table code in this room. Leave it there."}; }
-    else if(have>=quota){ chk.fb={cls:"amber",big:"Not needed here · "+e.box,small:"This table already has all its "+(e.des||"parts")+"."+(hu&&hu.id!==u.id?" Take it to table "+hu.k+" of "+hu.n+".":"")}; }
-    else { st.found.push(k); chk.fb={cls:"ok",big:"✓ Belongs here · "+e.box,small:(e.des||"")+(u.k&&hu&&hu.id!==u.id?" · listed on sign "+hu.k+"/"+hu.n+", same part: fine here":"")}; }
+  if(!chk.id){ chk.fb={cls:"info",big:"Scan the table sign first",small:"Then scan or type the component codes."}; renderCheck(); return "info"; }
+  const u=IDX.units.get(chk.id), st=chkState(u.id), req=needs(u);
+  const m=matchComponent(text,u);
+  chk.cur=null;
+  if(!m){ chk.fb={cls:"bad",big:"Code not recognised",small:"Read: "+text+". Type the component code printed on the label (e.g. F75BSC00)."}; renderCheck(); return "bad"; }
+  if(m.box&&st.boxes.includes(norm(m.box.box))){ chk.fb={cls:"dup",big:"This box was already counted",small:m.box.box+" · "+(m.fan||"")+" "+(m.des||"")}; renderCheck(); return "dup"; }
+  if(!m.keys.length){
+    chk.fb={cls:"bad",big:"✗ NOT PART OF THIS TABLE · "+(m.fan||text),small:(m.des?m.des+". ":"")+"This component is not used in "+splitTav(u.tav).code+(u.k?" table "+u.k+"/"+u.n:"")+"."};
+    st.log.unshift({t:Date.now(),txt:(m.fan||text)+" "+(m.des||"")+" · not part of this table"}); st.log=st.log.slice(0,20);
+    saveChecks(); renderCheck(); return "bad";
   }
-  saveChecks(); renderCheck();
-  return chk.fb.cls==="amber"?"dup":chk.fb.cls;
+  const open=m.keys.filter(k=>(st.cnt[k]||0)<req.get(k).need);
+  if(m.keys.length>1&&!m.box){
+    chk.fb={cls:"amber",big:"Choose the size · "+m.fan,small:"This table uses "+m.keys.length+" versions of this part. Tap + on the right one below."}; chk.cur={keys:m.keys}; renderCheck(); return "dup";
+  }
+  const k=m.keys[0], it=req.get(k);
+  if(!open.length){ chk.fb={cls:"amber",big:"Already complete · "+(it.x.fan||""),small:"All "+it.need+" × "+(it.x.des||"")+" are counted. Not needed here."}; chk.cur={keys:[k]}; renderCheck(); return "dup"; }
+  addCount(st,k,req); if(m.box) st.boxes.push(norm(m.box.box));
+  chk.fb={cls:"ok",big:"✓ "+(it.x.fan||"")+" · "+(st.cnt[k])+" of "+it.need,small:(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")};
+  chk.cur={keys:[k]};
+  saveChecks(); renderCheck(); return "ok";
 }
 function pickerOptions(){
   const out=[];
@@ -503,8 +534,8 @@ function renderCheck(){
     sel.onchange=()=>{ if(sel.value) location.hash="check-"+sel.value; };
     c.append(sel); P.append(c); return;
   }
-  const u=IDX.units.get(chk.id), tav=u.tav, s=splitTav(tav), all=IDX.byTav.get(tav)||[], st=chkState(u.id);
-  const found=new Set(st.found), total=u.boxes.length, done=Math.min(st.found.length,total);
+  const u=IDX.units.get(chk.id), tav=u.tav, s=splitTav(tav), all=IDX.byTav.get(tav)||[], st=chkState(u.id), req=needs(u);
+  let total=0, done=0; for(const [k,it] of req){ total+=it.need; done+=Math.min(st.cnt[k]||0,it.need); }
   const flc=(s.code.match(/^(\d+)-/)||[])[1]||"";
   const card=el("div","result");
   if(chk.fb){ const f=el("div","fb "+chk.fb.cls); f.append(el("span",null,chk.fb.big)); if(chk.fb.small) f.append(el("small",null,chk.fb.small)); card.append(f); }
@@ -513,38 +544,33 @@ function renderCheck(){
   card.append(fb);
   const notes=[...new Set(all.flatMap(x=>x.notes||[]))];
   if(notes.length) card.append(el("div","warn","Note in the list: "+notes.join(" · ")));
-  const cnt=el("div","count"); cnt.append(el("b",null,done+" / "+total),el("span",null,"boxes found"));
+  const cnt=el("div","count"); cnt.append(el("b",null,done+" / "+total),el("span",null,"components counted"));
   card.append(cnt);
   const pr=el("div","progress"); pr.style.margin="6px 16px 0"; const bar=el("i"); bar.style.width=Math.round(done/total*100)+"%"; pr.append(bar); card.append(pr);
-  if(done>=total) card.append(el("div","allok","All boxes of this table are here."));
-  // per part: how many are still needed, and which listed boxes are not found yet
-  const groups=new Map(); u.boxes.forEach(x=>{const k=pk(x); if(!groups.has(k)) groups.set(k,{items:[],extra:[]}); groups.get(k).items.push(x);});
-  st.found.forEach(b=>{ const x=IDX.byBox.get(b); if(x&&!u.boxes.includes(x)){ const k=pk(x); if(!groups.has(k)) groups.set(k,{items:[],extra:[]}); groups.get(k).extra.push(x);} });
-  const missLines=[];
-  for(const [k,g] of groups){ const have=g.items.filter(x=>found.has(norm(x.box))).length+g.extra.length; const need=(u.quota.get(k)||0)-have; if(need>0) missLines.push(need+" × "+((g.items[0]||g.extra[0]).des||"part")+": "+g.items.filter(x=>!found.has(norm(x.box))).map(x=>x.box).join(" · ")); }
-  if(missLines.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); missLines.forEach(l=>m.append(el("div","mono",l))); card.append(m); }
-  if(st.wrong.length){ const w=el("div","wrongs"); w.append(el("b",null,"Wrong boxes found here ("+st.wrong.length+") · move them")); st.wrong.forEach(x=>w.append(el("span",null,x.box+" → "+x.to))); card.append(w); }
-  const ul=el("ul","parts");
-  for(const [k,g] of groups){
-    const first=g.items[0]||g.extra[0], li=el("li","part"), h=el("div","part-h");
-    h.append(el("b",null,first.des||"Box"),el("span","qty","× "+(u.quota.get(k)||g.items.length)));
-    li.append(h);
-    if(first.fea) li.append(el("span","feat",first.fea+(first.fan?" · "+first.fan:"")));
-    const ch=el("div","chips");
-    g.items.slice().sort((a,b)=>(+a.box)-(+b.box)).forEach(x=>{ const ok=found.has(norm(x.box)), me=chk.cur&&chk.cur===x; const c=el("span","chip"+(me&&ok?" me":ok?" ok":""),(ok&&!me?"✓ ":"")+x.box); ch.append(c); });
-    g.extra.forEach(x=>{ const me=chk.cur&&chk.cur===x; ch.append(el("span","chip"+(me?" me":" ok"),"✓ "+x.box+" ↔")); });
-    li.append(ch); ul.append(li);
+  if(done>=total) card.append(el("div","allok","All components of this table are here."));
+  const miss=[...req].filter(([k,it])=>(st.cnt[k]||0)<it.need);
+  if(miss.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); miss.forEach(([k,it])=>m.append(el("div",null,(it.need-(st.cnt[k]||0))+" × "+(it.x.fan||"")+" · "+(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")))); card.append(m); }
+  if(st.log.length){ const w=el("div","wrongs"); w.append(el("b",null,"Not part of this table ("+st.log.length+") · move them")); st.log.forEach(x=>w.append(el("span",null,x.txt))); card.append(w); }
+  const ul=el("ul","comps");
+  for(const [k,it] of req){
+    const have=st.cnt[k]||0, full=have>=it.need, hot=chk.cur&&chk.cur.keys&&chk.cur.keys.includes(k);
+    const li=el("li","comp"+(full?" full":have?" part":"")+(hot?" hot":""));
+    const info=el("div","ci");
+    info.append(el("span","cc",it.x.fan||"—"),el("span","cd",(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")));
+    const ctr=el("div","ctr");
+    const minus=el("button","pm","−"); minus.type="button"; minus.setAttribute("aria-label","Remove one "+(it.x.fan||""));
+    minus.onclick=()=>{ if((st.cnt[k]||0)>0){ st.cnt[k]--; saveChecks(); chk.fb=null; chk.cur={keys:[k]}; renderCheck(); } };
+    const plus=el("button","pm","+"); plus.type="button"; plus.setAttribute("aria-label","Add one "+(it.x.fan||""));
+    plus.onclick=()=>{ if(addCount(st,k,req)){ saveChecks(); chk.fb={cls:"ok",big:"✓ "+(it.x.fan||"")+" · "+st.cnt[k]+" of "+it.need,small:it.x.des||""}; } else chk.fb={cls:"amber",big:"Already complete · "+(it.x.fan||""),small:"All "+it.need+" are counted."}; chk.cur={keys:[k]}; renderCheck(); };
+    ctr.append(minus,el("span","n",have+" / "+it.need),plus);
+    li.append(info,ctr); ul.append(li);
   }
   card.append(ul);
-  const lg=el("div","legend");
-  [["var(--ok-bg)","Found here"],["var(--surface)","Missing"]].forEach(([c,t])=>{const sp=el("span");const i=el("i");i.style.background=c;sp.append(i,t);lg.append(sp);});
-  if(u.k) lg.append(el("span",null,"↔ swapped with the identical table"));
-  card.append(lg);
   const act=el("div","ck-actions");
   const ch=el("a","btn","Change table"); ch.href="#check";
   const rs=el("button","btn","Start this table again"); rs.type="button";
   let armed=false;
-  rs.onclick=()=>{ if(!armed){armed=true; rs.textContent="Tap again to clear this table"; setTimeout(()=>{armed=false; rs.textContent="Start this table again";},3000); return;} delete checks[chk.id]; saveChecks(); chk.fb={cls:"info",big:"Check restarted",small:"Scan the boxes of this table."}; chk.cur=null; renderCheck(); };
+  rs.onclick=()=>{ if(!armed){armed=true; rs.textContent="Tap again to clear this table"; setTimeout(()=>{armed=false; rs.textContent="Start this table again";},3000); return;} delete checks[chk.id]; saveChecks(); chk.fb={cls:"info",big:"Check restarted",small:"Scan or type the component codes."}; chk.cur=null; renderCheck(); };
   act.append(ch,rs); card.append(act);
   P.append(card);
 }
@@ -555,7 +581,8 @@ function route(){
   $("tabCheck").toggleAttribute("aria-current",screen==="check"); if(screen==="check") $("tabCheck").setAttribute("aria-current","page");
   $("pageNav").hidden=screen==="sort";
   $("sortPanel").hidden=screen!=="sort"; $("checkPanel").hidden=screen!=="check";
-  $("manualIn").placeholder=screen==="check"?"or type a box number":"or type the box number";
+  $("manualIn").placeholder=screen==="check"?"or type a component code":"or type the box number";
+  $("manualIn").setAttribute("inputmode",screen==="check"?"text":"numeric");
   if(screen==="check"){
     const m=h.match(/^check-(T[0-9A-Z]{7})$/i);
     if(m&&IDX.units.has(m[1].toUpperCase())) openTable(m[1].toUpperCase());
@@ -667,7 +694,8 @@ async function tick(){
     }
   }
   if(res&&res.text&&scanning){
-    const known=lookup(res.text).type==="box"||!!parseTableId(res.text);
+    const qn=norm(res.text);
+    const known=lookup(res.text).type==="box"||!!parseTableId(res.text)||(screen==="check"&&[...IDX.byFan.keys()].some(f=>f&&(qn===f||qn.includes(f))));
     const repeat=res.text===lastHit.text&&Date.now()-lastHit.t<4000;  // same code still in front of the camera
     if(!repeat&&(known||res.text===lastRead)){
       lastHit={text:res.text,t:Date.now()};
