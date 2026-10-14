@@ -473,7 +473,11 @@ function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small
 function matchComponent(text,u){
   const req=needs(u), q=norm(text);
   const r=lookup(text);
-  if(r.type==="box"){ const e=r.e; return {box:e, keys:req.has(ck(e))?[ck(e)]:[], fan:e.fan||"", des:e.des||""}; }
+  if(r.type==="box"){ // only the component matters, not the table the Excel lists for this box
+    const e=r.e, keys=req.has(ck(e))?[ck(e)]:[];
+    const other=keys.length?[]:[...req.values()].filter(it=>norm(it.x.fan)===norm(e.fan));
+    return {box:e, keys, fan:e.fan||"", des:e.des||"", fea:e.fea||"", other};
+  }
   const keys=[...req.keys()].filter(k=>{ const f=norm(k.split("|")[0]); return f&&(q===f||(q.length>=4&&(q.includes(f)||f.endsWith(q)))); });
   if(keys.length){ const x=req.get(keys[0]).x; return {keys,fan:x.fan||"",des:x.des||""}; }
   if(IDX.byFan.has(q)){ const any=[...IDX.byBox.values()].find(x=>norm(x.fan)===q); return {keys:[],fan:any?any.fan:q,des:any?any.des:""}; }
@@ -493,9 +497,14 @@ function checkScan(text,format){
   chk.cur=null;
   if(!m){ chk.fb={cls:"bad",big:"Code not recognised",small:"Read: "+text+". Type the component code printed on the label (e.g. F75BSC00)."}; renderCheck(); return "bad"; }
   if(m.box&&st.boxes.includes(norm(m.box.box))){ chk.fb={cls:"dup",big:"This box was already counted",small:m.box.box+" · "+(m.fan||"")+" "+(m.des||"")}; renderCheck(); return "dup"; }
+  if(!m.keys.length&&m.other&&m.other.length){
+    chk.fb={cls:"bad",big:"✗ WRONG SIZE · "+m.fan+" "+m.fea,small:"Same component, different version. This table needs "+m.other.map(it=>it.x.fan+" "+(it.x.fea||"")).join(" or ")+"."};
+    st.log.unshift({t:Date.now(),txt:m.fan+" "+m.fea+" · wrong size for this table"}); st.log=st.log.slice(0,20);
+    saveChecks(); renderCheck(); return "bad";
+  }
   if(!m.keys.length){
-    chk.fb={cls:"bad",big:"✗ NOT PART OF THIS TABLE · "+(m.fan||text),small:(m.des?m.des+". ":"")+"This component is not used in "+splitTav(u.tav).code+(u.k?" table "+u.k+"/"+u.n:"")+"."};
-    st.log.unshift({t:Date.now(),txt:(m.fan||text)+" "+(m.des||"")+" · not part of this table"}); st.log=st.log.slice(0,20);
+    chk.fb={cls:"bad",big:"✗ NOT FOR THIS TABLE · "+(m.fan||text),small:(m.des?m.des+". ":"")+"This component is not used in "+splitTav(u.tav).code+(u.k?" table "+u.k+"/"+u.n:"")+"."};
+    st.log.unshift({t:Date.now(),txt:(m.fan||text)+" "+(m.des||"")+" · not used in this table"}); st.log=st.log.slice(0,20);
     saveChecks(); renderCheck(); return "bad";
   }
   const open=m.keys.filter(k=>(st.cnt[k]||0)<req.get(k).need);
@@ -505,7 +514,7 @@ function checkScan(text,format){
   const k=m.keys[0], it=req.get(k);
   if(!open.length){ chk.fb={cls:"amber",big:"Already complete · "+(it.x.fan||""),small:"All "+it.need+" × "+(it.x.des||"")+" are counted. Not needed here."}; chk.cur={keys:[k]}; renderCheck(); return "dup"; }
   addCount(st,k,req); if(m.box) st.boxes.push(norm(m.box.box));
-  chk.fb={cls:"ok",big:"✓ "+(it.x.fan||"")+" · "+(st.cnt[k])+" of "+it.need,small:(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")};
+  chk.fb={cls:"ok",big:"✓ OK FOR THIS TABLE · "+(it.x.fan||""),small:(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")+" · "+st.cnt[k]+" of "+it.need+" counted"};
   chk.cur={keys:[k]};
   saveChecks(); renderCheck(); return "ok";
 }
@@ -550,7 +559,7 @@ function renderCheck(){
   if(done>=total) card.append(el("div","allok","All components of this table are here."));
   const miss=[...req].filter(([k,it])=>(st.cnt[k]||0)<it.need);
   if(miss.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); miss.forEach(([k,it])=>m.append(el("div",null,(it.need-(st.cnt[k]||0))+" × "+(it.x.fan||"")+" · "+(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")))); card.append(m); }
-  if(st.log.length){ const w=el("div","wrongs"); w.append(el("b",null,"Not part of this table ("+st.log.length+") · move them")); st.log.forEach(x=>w.append(el("span",null,x.txt))); card.append(w); }
+  if(st.log.length){ const w=el("div","wrongs"); w.append(el("b",null,"Not for this table ("+st.log.length+") · move them")); st.log.forEach(x=>w.append(el("span",null,x.txt))); card.append(w); }
   const ul=el("ul","comps");
   for(const [k,it] of req){
     const have=st.cnt[k]||0, full=have>=it.need, hot=chk.cur&&chk.cur.keys&&chk.cur.keys.includes(k);
