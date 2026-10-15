@@ -50,11 +50,11 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;line-h
 .count span{color:var(--muted)}
 .comps{list-style:none;margin:8px 0 0;padding:0 16px 6px;display:flex;flex-direction:column}
 .comp{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--line);border-left:4px solid transparent}
-.comp.part{border-left-color:var(--found)}
+.comp.partial{border-left-color:var(--found)}
 .comp.full{border-left-color:var(--ok);background:var(--ok-bg)}
 .comp.hot{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
 .ci{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.cc{font:700 1.2rem var(--f-mono);letter-spacing:.01em}
+.cc{font:700 1.15rem var(--f-mono);letter-spacing:.01em;overflow-wrap:anywhere}
 .cd{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
 .ctr{display:flex;align-items:center;gap:6px;flex:none}
 .ctr .n{font:700 1.15rem var(--f-display);min-width:3.4em;text-align:center;font-variant-numeric:tabular-nums}
@@ -468,8 +468,10 @@ function needs(u){ // component -> {need, sample box}
   u.boxes.forEach(x=>{ const k=ck(x); if(!m.has(k)) m.set(k,{need:0,x}); m.get(k).need++; });
   return m;
 }
-function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small:"Scan or type the component codes, or use + and − on the list."}; chk.cur=null; renderCheck(); if(stream) resume(); }
+function openTable(id){ chk.id=id; chk.fb={cls:"info",big:"Table selected",small:"Scan or type the size codes (e.g. L160 P80), or use + and − on the list."}; chk.cur=null; renderCheck(); if(stream) resume(); }
 // find which component of this table a code refers to: a box number (gives code + size), or a component code typed/scanned
+const fz=s=>norm(s).replace(/\*/g,"");
+const sizeName=x=>x.fea||x.fan||"—";
 function matchComponent(text,u){
   const req=needs(u), q=norm(text);
   const r=lookup(text);
@@ -478,8 +480,18 @@ function matchComponent(text,u){
     const other=keys.length?[]:[...req.values()].filter(it=>norm(it.x.fan)===norm(e.fan));
     return {box:e, keys, fan:e.fan||"", des:e.des||"", fea:e.fea||"", other};
   }
-  const keys=[...req.keys()].filter(k=>{ const f=norm(k.split("|")[0]); return f&&(q===f||(q.length>=4&&(q.includes(f)||f.endsWith(q)))); });
-  if(keys.length){ const x=req.get(keys[0]).x; return {keys,fan:x.fan||"",des:x.des||""}; }
+  // size code from the "Features" column, e.g. "L160 P80 BN *" (typed "L160 P80" or "l160p80" is enough)
+  const qf=fz(text);
+  let keys=[];
+  if(qf.length>=3){
+    const exact=[...req.keys()].filter(k=>fz(req.get(k).x.fea)===qf);
+    keys=exact.length?exact:[...req.keys()].filter(k=>{ const f=fz(req.get(k).x.fea); return f&&(f.startsWith(qf)||(f.length>=6&&qf.includes(f))); });
+  }
+  // Fantoni component code, e.g. F75BSC00
+  if(!keys.length) keys=[...req.keys()].filter(k=>{ const f=norm(k.split("|")[0]); return f&&(q===f||(q.length>=4&&(q.includes(f)||f.endsWith(q)))); });
+  if(keys.length){ const x=req.get(keys[0]).x; return {keys,fan:x.fan||"",des:x.des||"",fea:x.fea||""}; }
+  const anyF=qf.length>=3&&[...IDX.byBox.values()].find(x=>fz(x.fea)===qf);
+  if(anyF) return {keys:[],fan:anyF.fan||"",des:anyF.des||"",fea:anyF.fea||"",byFea:true,other:[...req.values()].filter(it=>norm(it.x.fan)===norm(anyF.fan))};
   if(IDX.byFan.has(q)){ const any=[...IDX.byBox.values()].find(x=>norm(x.fan)===q); return {keys:[],fan:any?any.fan:q,des:any?any.des:""}; }
   return null;
 }
@@ -495,7 +507,7 @@ function checkScan(text,format){
   const u=IDX.units.get(chk.id), st=chkState(u.id), req=needs(u);
   const m=matchComponent(text,u);
   chk.cur=null;
-  if(!m){ chk.fb={cls:"bad",big:"Code not recognised",small:"Read: "+text+". Type the component code printed on the label (e.g. F75BSC00)."}; renderCheck(); return "bad"; }
+  if(!m){ chk.fb={cls:"bad",big:"Code not recognised",small:"Read: "+text+". Type the size code printed on the label (e.g. L160 P80)."}; renderCheck(); return "bad"; }
   if(m.box&&st.boxes.includes(norm(m.box.box))){ chk.fb={cls:"dup",big:"This box was already counted",small:m.box.box+" · "+(m.fan||"")+" "+(m.des||"")}; renderCheck(); return "dup"; }
   if(!m.keys.length&&m.other&&m.other.length){
     chk.fb={cls:"bad",big:"✗ WRONG SIZE · "+m.fan+" "+m.fea,small:"Same component, different version. This table needs "+m.other.map(it=>it.x.fan+" "+(it.x.fea||"")).join(" or ")+"."};
@@ -503,18 +515,18 @@ function checkScan(text,format){
     saveChecks(); renderCheck(); return "bad";
   }
   if(!m.keys.length){
-    chk.fb={cls:"bad",big:"✗ NOT FOR THIS TABLE · "+(m.fan||text),small:(m.des?m.des+". ":"")+"This component is not used in "+splitTav(u.tav).code+(u.k?" table "+u.k+"/"+u.n:"")+"."};
+    chk.fb={cls:"bad",big:"✗ NOT FOR THIS TABLE · "+(m.byFea?m.fea:(m.fan||text)),small:(m.des?m.des+". ":"")+"This component is not used in "+splitTav(u.tav).code+(u.k?" table "+u.k+"/"+u.n:"")+"."};
     st.log.unshift({t:Date.now(),txt:(m.fan||text)+" "+(m.des||"")+" · not used in this table"}); st.log=st.log.slice(0,20);
     saveChecks(); renderCheck(); return "bad";
   }
   const open=m.keys.filter(k=>(st.cnt[k]||0)<req.get(k).need);
   if(m.keys.length>1&&!m.box){
-    chk.fb={cls:"amber",big:"Choose the size · "+m.fan,small:"This table uses "+m.keys.length+" versions of this part. Tap + on the right one below."}; chk.cur={keys:m.keys}; renderCheck(); return "dup";
+    chk.fb={cls:"amber",big:"Choose the part · "+text.toUpperCase(),small:m.keys.length+" parts of this table match this code. Tap + on the right one below."}; chk.cur={keys:m.keys}; renderCheck(); return "dup";
   }
   const k=m.keys[0], it=req.get(k);
-  if(!open.length){ chk.fb={cls:"amber",big:"Already complete · "+(it.x.fan||""),small:"All "+it.need+" × "+(it.x.des||"")+" are counted. Not needed here."}; chk.cur={keys:[k]}; renderCheck(); return "dup"; }
+  if(!open.length){ chk.fb={cls:"amber",big:"Already complete · "+sizeName(it.x),small:"All "+it.need+" × "+(it.x.des||"")+" are counted. Not needed here."}; chk.cur={keys:[k]}; renderCheck(); return "dup"; }
   addCount(st,k,req); if(m.box) st.boxes.push(norm(m.box.box));
-  chk.fb={cls:"ok",big:"✓ OK FOR THIS TABLE · "+(it.x.fan||""),small:(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")+" · "+st.cnt[k]+" of "+it.need+" counted"};
+  chk.fb={cls:"ok",big:"✓ OK FOR THIS TABLE · "+sizeName(it.x),small:(it.x.des||"")+(it.x.fan?" · "+it.x.fan:"")+" · "+st.cnt[k]+" of "+it.need+" counted"};
   chk.cur={keys:[k]};
   saveChecks(); renderCheck(); return "ok";
 }
@@ -558,19 +570,19 @@ function renderCheck(){
   const pr=el("div","progress"); pr.style.margin="6px 16px 0"; const bar=el("i"); bar.style.width=Math.round(done/total*100)+"%"; pr.append(bar); card.append(pr);
   if(done>=total) card.append(el("div","allok","All components of this table are here."));
   const miss=[...req].filter(([k,it])=>(st.cnt[k]||0)<it.need);
-  if(miss.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); miss.forEach(([k,it])=>m.append(el("div",null,(it.need-(st.cnt[k]||0))+" × "+(it.x.fan||"")+" · "+(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")))); card.append(m); }
+  if(miss.length&&done>0){ const m=el("div","missing"); m.append(el("b",null,"Missing ("+(total-done)+")")); miss.forEach(([k,it])=>m.append(el("div",null,(it.need-(st.cnt[k]||0))+" × "+sizeName(it.x)+" · "+(it.x.des||"")+(it.x.fan?" · "+it.x.fan:"")))); card.append(m); }
   if(st.log.length){ const w=el("div","wrongs"); w.append(el("b",null,"Not for this table ("+st.log.length+") · move them")); st.log.forEach(x=>w.append(el("span",null,x.txt))); card.append(w); }
   const ul=el("ul","comps");
   for(const [k,it] of req){
     const have=st.cnt[k]||0, full=have>=it.need, hot=chk.cur&&chk.cur.keys&&chk.cur.keys.includes(k);
-    const li=el("li","comp"+(full?" full":have?" part":"")+(hot?" hot":""));
+    const li=el("li","comp"+(full?" full":have?" partial":"")+(hot?" hot":""));
     const info=el("div","ci");
-    info.append(el("span","cc",it.x.fan||"—"),el("span","cd",(it.x.des||"")+(it.x.fea?" · "+it.x.fea:"")));
+    info.append(el("span","cc",sizeName(it.x)),el("span","cd",(it.x.des||"")+(it.x.fan?" · "+it.x.fan:"")));
     const ctr=el("div","ctr");
     const minus=el("button","pm","−"); minus.type="button"; minus.setAttribute("aria-label","Remove one "+(it.x.fan||""));
     minus.onclick=()=>{ if((st.cnt[k]||0)>0){ st.cnt[k]--; saveChecks(); chk.fb=null; chk.cur={keys:[k]}; renderCheck(); } };
     const plus=el("button","pm","+"); plus.type="button"; plus.setAttribute("aria-label","Add one "+(it.x.fan||""));
-    plus.onclick=()=>{ if(addCount(st,k,req)){ saveChecks(); chk.fb={cls:"ok",big:"✓ "+(it.x.fan||"")+" · "+st.cnt[k]+" of "+it.need,small:it.x.des||""}; } else chk.fb={cls:"amber",big:"Already complete · "+(it.x.fan||""),small:"All "+it.need+" are counted."}; chk.cur={keys:[k]}; renderCheck(); };
+    plus.onclick=()=>{ if(addCount(st,k,req)){ saveChecks(); chk.fb={cls:"ok",big:"✓ "+sizeName(it.x)+" · "+st.cnt[k]+" of "+it.need,small:it.x.des||""}; } else chk.fb={cls:"amber",big:"Already complete · "+sizeName(it.x),small:"All "+it.need+" are counted."}; chk.cur={keys:[k]}; renderCheck(); };
     ctr.append(minus,el("span","n",have+" / "+it.need),plus);
     li.append(info,ctr); ul.append(li);
   }
@@ -590,7 +602,7 @@ function route(){
   $("tabCheck").toggleAttribute("aria-current",screen==="check"); if(screen==="check") $("tabCheck").setAttribute("aria-current","page");
   $("pageNav").hidden=screen==="sort";
   $("sortPanel").hidden=screen!=="sort"; $("checkPanel").hidden=screen!=="check";
-  $("manualIn").placeholder=screen==="check"?"or type a component code":"or type the box number";
+  $("manualIn").placeholder=screen==="check"?"or type the size code, e.g. L160 P80":"or type the box number";
   $("manualIn").setAttribute("inputmode",screen==="check"?"text":"numeric");
   if(screen==="check"){
     const m=h.match(/^check-(T[0-9A-Z]{7})$/i);
